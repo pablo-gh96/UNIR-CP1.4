@@ -19,6 +19,20 @@ class TestApi(unittest.TestCase):
         self.assertIsNotNone(BASE_URL, "URL no configurada")
         self.assertTrue(len(BASE_URL) > 8, "URL no configurada")
 
+    def test_api_listtodos_readonly(self):
+        print('---------------------------------------')
+        print('Starting - integration test List TODO readonly')
+        #List
+        url = BASE_URL+"/todos"
+        response = requests.get(url)
+        print('Response List Todo:' + str(response.json()))
+        self.assertEqual(
+            response.status_code, 200, "Error en la petición API a {url}"
+        )
+        self.assertTrue(response.json())
+        
+        print('End - integration test List TODO')
+
     def test_api_listtodos(self):
         print('---------------------------------------')
         print('Starting - integration test List TODO')
