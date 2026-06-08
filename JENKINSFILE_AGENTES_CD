@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Get Code') {
+            steps {
+                git branch: 'master', url: 'https://github.com/pablo-gh96/UNIR-CP1.4.git'
+
+                sh '''
+                    rm -rf config-repo
+                    rm -f samconfig.toml
+
+                    git clone --depth 1 --branch production https://github.com/pablo-gh96/todo-list-aws-config.git config-repo
+                    cp config-repo/samconfig.toml .
+                    rm -rf config-repo
+                '''
+
+                stash name: 'source-code', includes: '**/*'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                unstash 'source-code'
+
+                sh '''
+                    hostname
+                    whoami
+                    pwd
+
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-env production --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset
+                '''
+            }
+        }
+
+        stage('Rest Test') {
+            agent { label 'rest-agent' }
+
+            steps {
+                unstash 'source-code'
+
+                sh '''
+                    hostname
+                    whoami
+                    pwd
+
+                    export PATH=$HOME/.local/bin:$PATH
+
+                    export BASE_URL=$(aws cloudformation describe-stacks \
+                      --stack-name todo-list-aws-production \
+                      --region us-east-1 \
+                      --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
+                      --output text)
+
+                    pytest --junitxml=result-rest.xml test/integration -k "readonly"
+                '''
+
+                junit 'result-rest.xml'
+            }
+        }
+    }
+}

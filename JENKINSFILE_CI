@@ -1,0 +1,75 @@
+pipeline{
+    agent any
+
+    stages{
+        stage('Get Code') {
+            steps {
+                git branch: 'develop', url: 'https://github.com/pablo-gh96/UNIR-CP1.4.git'
+            }
+        }
+        
+        stage('Static Test') {
+            steps {
+                    sh '''
+                        flake8 --exit-zero --max-line-length 100 --format=pylint src > flake8.out
+                        python3 -m bandit --exit-zero -r src -f custom -o bandit.out --msg-template "{abspath}:{line}:[{test_id}] {msg}"
+                    '''
+                 recordIssues tools: [
+                    flake8(pattern: 'flake8.out'),
+                    pyLint(name: 'Bandit', pattern: 'bandit.out')
+                ]
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                sh '''
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-env staging --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset
+                '''
+            }
+        }
+
+        stage('Rest Test') {
+            steps {
+                sh '''
+                    export BASE_URL=$(aws cloudformation describe-stacks \
+                      --stack-name todo-list-aws-staging \
+                      --region us-east-1 \
+                      --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
+                      --output text)
+                    
+                    pytest --junitxml=result-rest.xml test/integration
+                '''
+        
+                junit 'result-rest.xml'
+            }
+        }
+
+
+        stage('Promote') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: '8ab42dad-d14c-4c58-bcac-5475e9e9d34f',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        git config user.email "jenkins@local"
+                        git config user.name "Jenkins"
+                
+                        git fetch origin
+                        git checkout master
+                        git pull origin master
+                        git merge develop
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/pablo-gh96/UNIR-CP1.4.git master
+                    '''
+                }
+            }
+        }
+
+
+    
+    }
+}

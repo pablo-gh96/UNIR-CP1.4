@@ -1,0 +1,38 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Get Code') {
+            steps {
+                git branch: 'master', url: 'https://github.com/pablo-gh96/UNIR-CP1.4.git'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-env production --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset
+                '''
+            }
+        }
+
+        stage('Rest Test') {
+            steps {
+                sh '''
+                    export BASE_URL=$(aws cloudformation describe-stacks \
+                      --stack-name todo-list-aws-production \
+                      --region us-east-1 \
+                      --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
+                      --output text)
+
+
+                    pytest --junitxml=result-rest.xml test/integration -k "readonly"
+                '''
+
+                junit 'result-rest.xml'
+            }
+        }
+    }
+}
